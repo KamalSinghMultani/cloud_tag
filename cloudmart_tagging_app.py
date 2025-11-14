@@ -803,40 +803,286 @@ if uploaded_file is not None:
             
             st.markdown("---")
             
-            # Task 5.5: Reflection
-            st.subheader("Task 5.5: Reflection on Tagging Impact")
-            st.info("💡 Hint: Write a short reflection on accountability")
+                        # Task 5.5: Reflection with Data-Driven Insights
+            st.subheader("Task 5.5: Impact Analysis - How Improved Tagging Affects Accountability")
+            st.info("💡 Hint: Analyze the data and discuss accountability improvements")
             
-            st.markdown("""
-            ### 🎯 Key Insights on Tag Remediation Impact:
+            # Calculate key metrics
+            before_tagged_count = st.session_state.original_df['Tagged'].value_counts()
+            after_tagged_count = st.session_state.df_edited['Tagged'].value_counts()
             
-            **Cost Visibility & Accountability:**
-            - Proper tagging enables accurate cost allocation to specific departments and projects
-            - Financial teams can track budget consumption more effectively
-            - Departments become accountable for their cloud spending
+            before_untagged = before_tagged_count.get('No', 0)
+            after_untagged = after_tagged_count.get('No', 0)
+            remediated_count = before_untagged - after_untagged
+            remediation_rate = (remediated_count / before_untagged * 100) if before_untagged > 0 else 0
             
-            **Governance Improvements:**
-            - Clear ownership identification helps in resource lifecycle management
-            - Better compliance with organizational policies
-            - Easier identification of orphaned or unused resources
+            before_cost = st.session_state.original_df[st.session_state.original_df['Tagged'] == 'No']['MonthlyCostUSD'].sum()
+            after_cost = st.session_state.df_edited[st.session_state.df_edited['Tagged'] == 'No']['MonthlyCostUSD'].sum()
+            cost_recovered = before_cost - after_cost
             
-            **Operational Benefits:**
-            - Simplified cost optimization initiatives
-            - Enhanced ability to forecast and budget cloud expenses
-            - Improved resource tracking and audit capabilities
+            # Key Metrics Dashboard
+            st.markdown("### 📊 Remediation Impact Summary")
             
-            **Best Practices Recommendations:**
-            1. Implement automated tagging policies during resource provisioning
-            2. Enforce mandatory tags through cloud governance tools (AWS Organizations, Azure Policy)
-            3. Regular audits to maintain tagging compliance
-            4. Establish clear tagging standards across the organization
-            5. Integrate tagging requirements into CI/CD pipelines (Terraform, CloudFormation)
+            col1, col2, col3, col4 = st.columns(4)
             
-            **Financial Impact:**
-            - Reduction in untagged resources directly improves cost allocation accuracy
-            - Better showback/chargeback reporting to departments
-            - Identification of cost optimization opportunities
-            """)
+            with col1:
+                st.metric("Resources Remediated", f"{remediated_count}", 
+                         delta=f"{remediation_rate:.1f}% of untagged")
+            with col2:
+                st.metric("Cost Visibility Gained", f"${cost_recovered:,.2f}",
+                         delta="Now trackable")
+            with col3:
+                completion_rate = ((len(st.session_state.df_edited) - after_untagged) / len(st.session_state.df_edited) * 100)
+                st.metric("Overall Compliance", f"{completion_rate:.1f}%",
+                         delta=f"+{remediation_rate:.1f}%")
+            with col4:
+                avg_tags_before = st.session_state.original_df[['Department', 'Project', 'Owner']].notna().sum().sum() / (len(st.session_state.original_df) * 3) * 100
+                avg_tags_after = st.session_state.df_edited[['Department', 'Project', 'Owner']].notna().sum().sum() / (len(st.session_state.df_edited) * 3) * 100
+                st.metric("Tag Completeness", f"{avg_tags_after:.1f}%",
+                         delta=f"+{avg_tags_after - avg_tags_before:.1f}%")
+            
+            st.markdown("---")
+            
+            # Visualization 1: Tag Completeness Improvement by Field
+            st.markdown("### 🎯 Tag Completeness Improvement by Field")
+            
+            tag_fields = ['Department', 'Project', 'Owner']
+            before_completeness = []
+            after_completeness = []
+            
+            for field in tag_fields:
+                if field in st.session_state.original_df.columns:
+                    before_pct = (st.session_state.original_df[field].notna().sum() / len(st.session_state.original_df)) * 100
+                    after_pct = (st.session_state.df_edited[field].notna().sum() / len(st.session_state.df_edited)) * 100
+                    before_completeness.append(before_pct)
+                    after_completeness.append(after_pct)
+            
+            completeness_df = pd.DataFrame({
+                'Tag Field': tag_fields * 2,
+                'Completeness %': before_completeness + after_completeness,
+                'Status': ['Before'] * len(tag_fields) + ['After'] * len(tag_fields)
+            })
+            
+            fig = px.bar(completeness_df, x='Tag Field', y='Completeness %',
+                        color='Status', barmode='group',
+                        title='Tag Field Completeness: Before vs After Remediation',
+                        color_discrete_map={'Before': '#dc3545', 'After': '#28a745'},
+                        text='Completeness %')
+            fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig.update_layout(yaxis_range=[0, 110])
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Visualization 2: Cost Accountability by Department
+            st.markdown("### 💰 Cost Accountability Impact by Department")
+            
+            if 'Department' in st.session_state.df_edited.columns:
+                # Calculate before/after costs by department
+                before_dept_costs = st.session_state.original_df.groupby('Department')['MonthlyCostUSD'].sum().reset_index()
+                before_dept_costs.columns = ['Department', 'Total Cost']
+                
+                # Calculate untagged costs
+                before_untagged_dept = st.session_state.original_df[st.session_state.original_df['Tagged'] == 'No'].groupby('Department')['MonthlyCostUSD'].sum().reset_index()
+                before_untagged_dept.columns = ['Department', 'Untagged Cost Before']
+                
+                after_untagged_dept = st.session_state.df_edited[st.session_state.df_edited['Tagged'] == 'No'].groupby('Department')['MonthlyCostUSD'].sum().reset_index()
+                after_untagged_dept.columns = ['Department', 'Untagged Cost After']
+                
+                # Merge
+                dept_comparison = before_dept_costs.merge(before_untagged_dept, on='Department', how='left').merge(after_untagged_dept, on='Department', how='left')
+                dept_comparison['Untagged Cost Before'] = dept_comparison['Untagged Cost Before'].fillna(0)
+                dept_comparison['Untagged Cost After'] = dept_comparison['Untagged Cost After'].fillna(0)
+                dept_comparison['Cost Now Trackable'] = dept_comparison['Untagged Cost Before'] - dept_comparison['Untagged Cost After']
+                dept_comparison['Accountability %'] = (dept_comparison['Cost Now Trackable'] / dept_comparison['Total Cost'] * 100).round(1)
+                
+                # Create visualization
+                fig = px.bar(dept_comparison, x='Department', y='Cost Now Trackable',
+                            title='Cost Visibility Gained by Department',
+                            color='Accountability %',
+                            color_continuous_scale='Greens',
+                            text='Cost Now Trackable')
+                fig.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Show department accountability table
+                dept_display = dept_comparison[['Department', 'Total Cost', 'Cost Now Trackable', 'Accountability %']].sort_values('Cost Now Trackable', ascending=False)
+                dept_display['Total Cost'] = dept_display['Total Cost'].apply(lambda x: f'${x:,.2f}')
+                dept_display['Cost Now Trackable'] = dept_display['Cost Now Trackable'].apply(lambda x: f'${x:,.2f}')
+                dept_display['Accountability %'] = dept_display['Accountability %'].apply(lambda x: f'{x:.1f}%')
+                
+                st.dataframe(dept_display, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Visualization 3: Tagging Progress Timeline
+            st.markdown("### 📈 Tagging Compliance Progress")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Pie chart comparison
+                progress_data = pd.DataFrame({
+                    'Status': ['Tagged', 'Untagged', 'Tagged', 'Untagged'],
+                    'Count': [
+                        before_tagged_count.get('Yes', 0),
+                        before_tagged_count.get('No', 0),
+                        after_tagged_count.get('Yes', 0),
+                        after_tagged_count.get('No', 0)
+                    ],
+                    'Period': ['Before', 'Before', 'After', 'After']
+                })
+                
+                fig = px.pie(progress_data[progress_data['Period'] == 'Before'], 
+                            values='Count', names='Status',
+                            title='Before Remediation',
+                            color='Status',
+                            color_discrete_map={'Tagged': '#28a745', 'Untagged': '#dc3545'},
+                            hole=0.4)
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                fig = px.pie(progress_data[progress_data['Period'] == 'After'], 
+                            values='Count', names='Status',
+                            title='After Remediation',
+                            color='Status',
+                            color_discrete_map={'Tagged': '#28a745', 'Untagged': '#dc3545'},
+                            hole=0.4)
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # Key Insights with Icons
+            st.markdown("### 🎯 Key Accountability Improvements")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("""
+                #### 📋 **Cost Visibility Benefits**
+                
+                **Before Remediation:**
+                - 🔴 ${:,.2f} in untracked cloud spending
+                - 🔴 {:} resources without clear ownership
+                - 🔴 No departmental cost attribution
+                
+                **After Remediation:**
+                - 🟢 ${:,.2f} now properly attributed
+                - 🟢 {:} resources with clear owners
+                - 🟢 Improved budget accountability by {:.1f}%
+                """.format(
+                    before_cost,
+                    before_untagged,
+                    cost_recovered,
+                    remediated_count,
+                    (cost_recovered / before_cost * 100) if before_cost > 0 else 0
+                ))
+            
+            with col2:
+                st.markdown("""
+                #### 🏢 **Governance Impact**
+                
+                **Organizational Benefits:**
+                - ✅ Clear resource ownership established
+                - ✅ Department-level cost tracking enabled
+                - ✅ Compliance with tagging policies improved
+                - ✅ Better resource lifecycle management
+                
+                **Financial Control:**
+                - ✅ Accurate showback/chargeback reports
+                - ✅ Budget variance tracking by department
+                - ✅ Cost anomaly detection enabled
+                - ✅ Forecasting accuracy improved
+                """)
+            
+            st.markdown("---")
+            
+            # Actionable Recommendations
+            st.markdown("### 🚀 Recommended Next Steps")
+            
+            # Calculate specific recommendations based on data
+            remaining_untagged = after_untagged
+            remaining_cost = after_cost
+            
+            if remaining_untagged > 0:
+                st.warning(f"""
+                **⚠️ Action Required:** {remaining_untagged} resources (${remaining_cost:,.2f}) still remain untagged.
+                
+                **Priority Actions:**
+                1. 🎯 Focus on high-cost resources first (RDS, EC2 instances)
+                2. 📧 Contact resource creators to identify ownership
+                3. 🔍 Review resources older than 90 days without tags
+                4. 🗑️ Consider decommissioning orphaned resources
+                """)
+            else:
+                st.success("🎉 **Excellent!** All resources are now properly tagged!")
+            
+            # Best Practices Visualization
+            st.markdown("### 📚 Best Practices for Sustained Compliance")
+            
+            best_practices = pd.DataFrame({
+                'Practice': [
+                    'Automated Tagging',
+                    'Tag Policies',
+                    'Regular Audits',
+                    'Owner Training',
+                    'CI/CD Integration'
+                ],
+                'Impact': [95, 90, 85, 80, 92],
+                'Effort': [60, 40, 30, 20, 70],
+                'Category': ['Automation', 'Policy', 'Process', 'People', 'Automation']
+            })
+            
+            fig = px.scatter(best_practices, x='Effort', y='Impact', size='Impact',
+                            color='Category', text='Practice',
+                            title='Best Practices: Impact vs Implementation Effort',
+                            labels={'Impact': 'Effectiveness (%)', 'Effort': 'Implementation Effort (%)'},
+                            color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_traces(textposition='top center')
+            fig.update_layout(showlegend=True)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # ROI Calculation
+            st.markdown("### 💵 Estimated ROI of Tag Remediation")
+            
+            # Calculate potential savings
+            monthly_savings = cost_recovered * 0.15  # Assume 15% optimization from visibility
+            annual_savings = monthly_savings * 12
+            remediation_hours = remediated_count * 0.25  # 15 min per resource
+            remediation_cost = remediation_hours * 50  # $50/hour average
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("One-time Cost", f"${remediation_cost:,.0f}",
+                         delta="Remediation effort")
+            with col2:
+                st.metric("Monthly Savings", f"${monthly_savings:,.0f}",
+                         delta="15% optimization")
+            with col3:
+                roi_months = remediation_cost / monthly_savings if monthly_savings > 0 else 0
+                st.metric("Break-even Period", f"{roi_months:.1f} months",
+                         delta=f"${annual_savings:,.0f}/year")
+            
+            # ROI visualization
+            months = list(range(0, 13))
+            cumulative_savings = [monthly_savings * m - remediation_cost for m in months]
+            
+            roi_df = pd.DataFrame({
+                'Month': months,
+                'Net Benefit': cumulative_savings
+            })
+            
+            fig = px.line(roi_df, x='Month', y='Net Benefit',
+                         title='Cumulative ROI from Tag Remediation',
+                         markers=True)
+            fig.add_hline(y=0, line_dash="dash", line_color="red", 
+                         annotation_text="Break-even")
+            fig.update_layout(yaxis_title='Cumulative Net Benefit ($)')
+            st.plotly_chart(fig, use_container_width=True)
+
         
         # Footer
         st.sidebar.markdown("---")
