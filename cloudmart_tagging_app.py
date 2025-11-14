@@ -660,7 +660,7 @@ if uploaded_file is not None:
                 # Determine which columns to make editable
                 disabled_columns = ['AccountID', 'ResourceID', 'Service', 'Region', 'MonthlyCostUSD', 'CreatedBy', 'Tagged']
                 
-                # Display editable table
+                # Display editable table - CAPTURE THE EDITED DATA
                 edited_data = st.data_editor(
                     untagged_df,
                     use_container_width=True,
@@ -668,6 +668,11 @@ if uploaded_file is not None:
                     disabled=[col for col in disabled_columns if col in untagged_df.columns],
                     key='data_editor'
                 )
+                
+                # Store edited data in session state
+                if 'last_edited_data' not in st.session_state:
+                    st.session_state.last_edited_data = None
+                    
             else:
                 st.success("🎉 Great! There are no untagged resources to remediate with the current filters.")
                 edited_data = None
@@ -679,22 +684,30 @@ if uploaded_file is not None:
             st.info("💡 Hint: Apply changes and update Tagged status")
             
             if edited_data is not None and len(edited_data) > 0:
-                if st.button("✅ Apply Changes and Update Tagged Status"):
+                if st.button("✅ Apply Changes and Update Tagged Status", type="primary"):
                     # Update the main dataframe with edited data
+                    changes_made = 0
                     for idx, row in edited_data.iterrows():
                         # Check if all important fields are filled
                         has_dept = pd.notna(row.get('Department', None)) if 'Department' in row else True
                         has_project = pd.notna(row.get('Project', None)) if 'Project' in row else True
                         has_owner = pd.notna(row.get('Owner', None)) if 'Owner' in row else True
                         
-                        if has_dept and has_project and has_owner:
-                            st.session_state.df_edited.at[idx, 'Tagged'] = 'Yes'
-                        
-                        # Update all fields
+                        # Update all fields first
                         for col in edited_data.columns:
                             st.session_state.df_edited.at[idx, col] = row[col]
+                        
+                        # Then check if should be marked as tagged
+                        if has_dept and has_project and has_owner:
+                            st.session_state.df_edited.at[idx, 'Tagged'] = 'Yes'
+                            changes_made += 1
                     
-                    st.success("✅ Changes applied successfully! Resources with complete tags have been marked as 'Tagged'.")
+                    if changes_made > 0:
+                        st.success(f"✅ {changes_made} resource(s) updated successfully! Resources with complete tags have been marked as 'Tagged'.")
+                    else:
+                        st.warning("⚠️ No resources were fully tagged. Make sure to fill Department, Project, AND Owner fields.")
+                    
+                    # Force reload
                     st.rerun()
             
             st.markdown("---")
